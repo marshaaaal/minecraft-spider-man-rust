@@ -79,9 +79,10 @@ instead (above).
 3. `uv run --python 3.12 python native/tools/package.py` writes `target/spider_man-<version>.hnmod`;
    `cargo horizon-mod check <it>` (the `cargo-horizon-mod` built from the pinned Horizon) must pass.
 4. Pull request to `main`, then a GitHub release (not a pre-release) tagged `v<version>` with the `.hnmod` as its
-   asset. Horizon's registry lists this repository by its releases (`mods/spider_man.toml` in horizon-mods names the
-   repository), so the release is the update: no form. The registry page is `horizon-registry.toml` as of the
-   newest release's tag.
+   asset. Horizon's registry pins every version by its SHA-256 (`mods/spider_man.toml` in horizon-mods), so a release
+   alone does not reach the launcher's Mods page: add the version through the form at
+   `playhorizon.dev/mods/submit` (signed in as an owner of the entry), which opens a pull request there; a reviewer
+   reads it and merging publishes it.
 5. Check the player's path: `horizon-launcher mods add-github https://github.com/wyddy7/minecraft-spider-man-rust
    --trust-native-code`, then `horizon-launcher native-build --trust-native-code`, then play.
 

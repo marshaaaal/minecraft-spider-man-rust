@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 — 2026-11-10
 
 - A hint for a first web: "Hold R and jump to swing, or hold Z to zip" (naming the keys they are on) above the
   hotbar, from the first time the mod runs in a world of yours until the first web or zip, then never again. It steps
