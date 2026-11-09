@@ -174,6 +174,8 @@ pub struct Output {
     pub wind: Set<f32>,
     /// Strength and seconds.
     pub shake: Option<(f32, f32)>,
+    /// A web or a zip line was shot this tick.
+    pub web_shot: bool,
     pub chat: Vec<String>,
     /// The mod's HUD panel lines (text, 0xRRGGBB); none clears it.
     pub panel: Set<Option<Vec<(String, u32)>>>,

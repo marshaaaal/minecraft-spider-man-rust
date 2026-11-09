@@ -158,6 +158,10 @@ pub mod motion {
     pub fn clear_pose() {
         output(|o| o.pose = Set::To(None));
     }
+    /// A web or a zip line was shot this tick: the game plays its sound.
+    pub fn web_shot() {
+        output(|o| o.web_shot = true);
+    }
     pub fn set_wind(volume: f32) {
         output(|o| o.wind = Set::To(volume));
     }

@@ -357,8 +357,9 @@ pub struct Spidey {
     pub safe: bool,
     /// A vault over an obstacle on the ground, under way.
     vault: Option<Vault>,
-    /// Webs shot so far, for `/swingmode debug`.
+    /// Webs shot so far, for `/swingmode debug`, and zips begun.
     pub webs: u32,
+    pub zips: u32,
     /// The last vault picked, for `/swingmode debug`.
     pub vault_note: String,
     /// Ticks a held pose has been easing out on the ground.
@@ -418,6 +419,7 @@ impl Default for Spidey {
             safe: false,
             vault: None,
             webs: 0,
+            zips: 0,
             vault_note: String::new(),
             ease_out: 0,
         }
@@ -1157,6 +1159,7 @@ impl Spidey {
                 let hit = P::of(hit);
                 let flight = flight_ticks(((hit - chest).len() / HOOK_SPEED).clamp(1.0, MAX_FLIGHT), self.web_delay);
                 self.zip = Some(hit);
+                self.zips += 1;
                 self.zip_flying = flight;
                 self.zip_flight = flight;
                 self.web = None;

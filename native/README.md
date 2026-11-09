@@ -17,7 +17,7 @@ unchanged; this folder holds the game-side hooks and the tooling around them.
 
 | Hook | Horizon function | Does |
 |---|---|---|
-| HEAD | `game::remote::Game::tick_remote` | each tick: rays, keys, the player to the mod; velocity, fall reset, pose, camera, shake, wind, chat lines back |
+| HEAD | `game::remote::Game::tick_remote` | each tick: rays, keys, the player to the mod; velocity, fall reset, pose, camera, shake, wind, chat lines, the web shot's sound and the first-swing hint back |
 | HEAD + RETURN | `game::remote::Game::remote_send_state` | while the mod forgets the fall, your own world's server hears you as on the ground (never another server) |
 | HEAD | `game::leads::Game::leash_geometry` | the web strands |
 | cancellable HEAD | `game::perspective::Game::player_model_geometry` | the posed player model (third person) |
@@ -34,7 +34,9 @@ bounded, and a panic in the mod skips its tick (it starts over) instead of crash
 ## Differences from the WebAssembly version
 
 - While posed, the player model is drawn without armour, the held item or elytra.
-- The help shows in chat, not a HUD panel. The settings file is `mod-storage/spider-man/` in the game's folder.
+- The help shows in chat, not a HUD panel; the mod's panel is one line, the hint for a first web or zip, shown as
+  the action bar for up to a minute a session. The settings file is `mod-storage/spider-man/` in the game's folder
+  (`hint=done` there once a web was shot or a zip made; delete the line to see the hint again).
 
 ## Install with the Horizon launcher
 
