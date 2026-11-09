@@ -163,6 +163,13 @@ struct Swing {
     last_chest: Option<P>,
     now: u64,
     last_panel: Vec<String>,
+    /// The player has shot a web or zipped at least once (kept with the
+    /// settings): the hint is not shown again. And the ticks it has been up
+    /// since the game started.
+    hint_done: bool,
+    hint_ticks: u32,
+    /// Webs and zips shot as of last tick: one more is a shot to be heard.
+    shots: u32,
     /// A fixed camera for checking poses (`/swingmode view`), and the chase
     /// camera's distance now.
     view: Option<motion::Camera>,
@@ -197,6 +204,8 @@ const MAPPINGS: [(&str, &str); 7] = [
 const SETTINGS: &str = "settings";
 const DELAY_STEPS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 const BUTTON_DELAY: u32 = 1;
+/// How long the hint stays up in one session: a minute of play.
+const HINT_TICKS: u32 = 1200;
 
 thread_local! {
     /// What is held this tick, by the names above: the mod's keys from
@@ -279,6 +288,7 @@ impl Swing {
                         self.spidey.web_delay = d.clamp(0.0, 2.0);
                     }
                 }
+                Some(("hint", v)) => self.hint_done = v.trim() == "done",
                 _ => {}
             }
         }
@@ -286,8 +296,9 @@ impl Swing {
 
     fn save_settings(&self) {
         let text = format!(
-            "delay={}\n",
-            self.spidey.web_delay
+            "delay={}\nhint={}\n",
+            self.spidey.web_delay,
+            if self.hint_done { "done" } else { "show" }
         );
         if let Err(e) = storage::set(SETTINGS, text.as_bytes()) {
             horizon_mod_sdk::log::write(horizon_mod_sdk::log::Level::Warn, &e);
@@ -313,10 +324,19 @@ impl Swing {
         ]);
     }
 
-    fn panel(&mut self) {
-        let lines: Vec<String> = match self.mode {
-            Mode::Off => Vec::new(),
-            Mode::Web => vec!["Web: hold R, A/D side. Hold Z: zip, Space hauls".into()],
+    /// The hint for a first web; the game writes the keys the web and the
+    /// zip are on now in place of `{web}` and `{zip}` (the mod's key names).
+    /// Up while the mod can act (`active`) until the first web or zip,
+    /// then never again. It steps aside after `HINT_TICKS` of a session (no
+    /// anchor in reach, or a player who isn't interested) and comes back with
+    /// the next start of the game.
+    fn panel(&mut self, active: bool) {
+        let show = active && self.mode == Mode::Web && !self.hint_done && self.hint_ticks < HINT_TICKS;
+        let lines: Vec<String> = if show {
+            self.hint_ticks += 1;
+            vec!["Hold {web} and jump to swing, or hold {zip} to zip".into()]
+        } else {
+            Vec::new()
         };
         if lines != self.last_panel {
             if lines.is_empty() {
@@ -346,6 +366,9 @@ impl Mod for Swing {
                 last_chest: None,
                 now: 100,
                 last_panel: Vec::new(),
+                hint_done: false,
+                hint_ticks: 0,
+                shots: 0,
                 spidey: spidey::Spidey::default(),
                 rays: sense::Rays::default(),
                 sense: None,
@@ -371,8 +394,8 @@ impl Mod for Swing {
     fn tick(&mut self, _tick: u64) {
         self.now += 1;
         read_keys();
-        self.panel();
         let (Some(st), Some(player)) = (motion::get(), game::get_player()) else {
+            self.panel(false);
             self.last_chest = None;
             self.sense = None;
             return;
@@ -419,6 +442,15 @@ impl Mod for Swing {
             if let Some(v) = self.spidey.tick(&state, chest, v) {
                 motion::set_velocity(v.wit());
             }
+            let shots = self.spidey.webs + self.spidey.zips;
+            if shots != std::mem::replace(&mut self.shots, shots) {
+                motion::web_shot();
+                if !self.hint_done {
+                    self.hint_done = true;
+                    self.save_settings();
+                }
+            }
+            self.panel(true);
             if self.spidey.safe {
                 motion::reset_fall();
             }
@@ -433,6 +465,7 @@ impl Mod for Swing {
             return;
         }
         // Off: the game moves the player as always.
+        self.panel(false);
         self.last_chest = None;
         motion::set_ropes(&[]);
     }

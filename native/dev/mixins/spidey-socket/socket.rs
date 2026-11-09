@@ -64,7 +64,17 @@ struct Shared {
     seen: Option<(f32, f32)>,
     manual: Option<Instant>,
     align_then: Option<Instant>,
+    /// The hint line on the action bar as of last tick.
+    hint: Option<String>,
 }
+
+/// The web shot's sound: an event of the mod's own, registered at run time
+/// from two of the game's five soul sand steps, played pitched up (1.0 is
+/// the plain step).
+const THWIP: &str = "spider_man:web.shoot";
+const THWIP_SOUNDS: &[u8] =
+    br#"{"web.shoot":{"sounds":["minecraft:block/soul_sand/step1","minecraft:block/soul_sand/step3"]}}"#;
+const THWIP_PITCH: f32 = 1.6;
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     commands: Vec::new(),
@@ -80,6 +90,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     seen: None,
     manual: None,
     align_then: None,
+    hint: None,
 });
 
 fn shared<T>(f: impl FnOnce(&mut Shared) -> T) -> T {
@@ -293,6 +304,47 @@ pub fn tick(game: &mut super::Game<'_>) {
         game.system_message(horizon_client::text::Text::literal(line));
     }
     let current = horizon_dev_reload::current();
+    // The sound of a web or a zip line shot this tick. The event is added
+    // again if a resource reload dropped it.
+    if out.web_shot
+        && local
+        && let Some(eye) = game.eye_position()
+    {
+        if !game.audio.engine.registry.contains(THWIP) {
+            game.audio.engine.registry.add_file(ID, THWIP_SOUNDS, &|_, _| true);
+        }
+        game.native_play_local_sound(THWIP, eye, 0.9, THWIP_PITCH, 0);
+    }
+    // The mod's panel is one line, its hint for a first web: shown as the
+    // action bar for as long as the mod keeps it, with `{name}` of each of
+    // the mod's keys written as the game names the key the player chose.
+    // Another action bar message (a bed's, a jukebox's) keeps its own time
+    // and the hint returns after it; a hint the mod took back goes at once.
+    let hint = current
+        .panel
+        .as_ref()
+        .and_then(|lines| lines.first())
+        .filter(|_| local && playing)
+        .map(|(line, _)| {
+            current.keys.iter().fold(line.clone(), |line, k| {
+                let key = game.native_mod_key(ID, &k.name, &k.default);
+                let label = horizon_client_core::key_display::display_name(&key).plain();
+                line.replace(&format!("{{{}}}", k.name), &label)
+            })
+        });
+    let before = shared(|s| std::mem::replace(&mut s.hint, hint.clone()));
+    let on_bar = |game: &super::Game<'_>, line: &String| {
+        game.titles.overlay_time > 0 && game.titles.overlay.as_ref().is_some_and(|t| &t.plain() == line)
+    };
+    match (hint, before) {
+        (Some(line), _) => {
+            if game.titles.overlay_time <= 0 || on_bar(game, &line) {
+                game.titles.set_overlay(horizon_client::text::Text::literal(&line), false);
+            }
+        }
+        (None, Some(old)) if on_bar(game, &old) => game.titles.overlay_time = 0,
+        _ => {}
+    }
     shared(|s| {
         s.safe_fall = local && out.reset_fall;
         if !local {

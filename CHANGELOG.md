@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased (0.2.0)
+## Unreleased
+
+- A hint for a first web: "Hold R and jump to swing, or hold Z to zip" (naming the keys they are on) above the
+  hotbar, from the first time the mod runs in a world of yours until the first web or zip, then never again. It steps
+  aside after a minute of play and returns with the next start of the game.
+- A web shot and a zip have a sound: two of the game's soul sand steps, pitched up, as the mod's own sound event
+  `spider_man:web.shoot` (no file shipped).
+
+## 0.2.0 — 2026-11-04
 
 - On Horizon's Nightly of 2026-11-03 and horizon-mixins 0.6. The mod id is `spider_man`, as Horizon's registry
   requires, and `native/tools/package.py` makes its `.hnmod`; install it from the launcher's Mods page.

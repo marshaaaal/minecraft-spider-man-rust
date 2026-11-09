@@ -68,7 +68,17 @@ struct Shared {
     seen: Option<(f32, f32)>,
     manual: Option<Instant>,
     align_then: Option<Instant>,
+    /// The hint line on the action bar as of last tick.
+    hint: Option<String>,
 }
+
+/// The web shot's sound: an event of the mod's own, registered at run time
+/// from two of the game's five soul sand steps, played pitched up (1.0 is
+/// the plain step).
+const THWIP: &str = "spider_man:web.shoot";
+const THWIP_SOUNDS: &[u8] =
+    br#"{"web.shoot":{"sounds":["minecraft:block/soul_sand/step1","minecraft:block/soul_sand/step3"]}}"#;
+const THWIP_PITCH: f32 = 1.6;
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     commands: Vec::new(),
@@ -84,6 +94,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     seen: None,
     manual: None,
     align_then: None,
+    hint: None,
 });
 
 fn shared<T>(f: impl FnOnce(&mut Shared) -> T) -> T {
@@ -297,6 +308,47 @@ pub fn tick(game: &mut super::Game<'_>) {
         game.system_message(horizon_client::text::Text::literal(line));
     }
     let current = horizon_dev_reload::current();
+    // The sound of a web or a zip line shot this tick. The event is added
+    // again if a resource reload dropped it.
+    if out.web_shot
+        && local
+        && let Some(eye) = game.eye_position()
+    {
+        if !game.audio.engine.registry.contains(THWIP) {
+            game.audio.engine.registry.add_file(ID, THWIP_SOUNDS, &|_, _| true);
+        }
+        game.native_play_local_sound(THWIP, eye, 0.9, THWIP_PITCH, 0);
+    }
+    // The mod's panel is one line, its hint for a first web: shown as the
+    // action bar for as long as the mod keeps it, with `{name}` of each of
+    // the mod's keys written as the game names the key the player chose.
+    // Another action bar message (a bed's, a jukebox's) keeps its own time
+    // and the hint returns after it; a hint the mod took back goes at once.
+    let hint = current
+        .panel
+        .as_ref()
+        .and_then(|lines| lines.first())
+        .filter(|_| local && playing)
+        .map(|(line, _)| {
+            current.keys.iter().fold(line.clone(), |line, k| {
+                let key = game.native_mod_key(ID, &k.name, &k.default);
+                let label = horizon_client_core::key_display::display_name(&key).plain();
+                line.replace(&format!("{{{}}}", k.name), &label)
+            })
+        });
+    let before = shared(|s| std::mem::replace(&mut s.hint, hint.clone()));
+    let on_bar = |game: &super::Game<'_>, line: &String| {
+        game.titles.overlay_time > 0 && game.titles.overlay.as_ref().is_some_and(|t| &t.plain() == line)
+    };
+    match (hint, before) {
+        (Some(line), _) => {
+            if game.titles.overlay_time <= 0 || on_bar(game, &line) {
+                game.titles.set_overlay(horizon_client::text::Text::literal(&line), false);
+            }
+        }
+        (None, Some(old)) if on_bar(game, &old) => game.titles.overlay_time = 0,
+        _ => {}
+    }
     shared(|s| {
         s.safe_fall = local && out.reset_fall;
         if !local {
@@ -1163,6 +1215,8 @@ pub mod horizon_dev_reload {
             pub wind: Set<f32>,
             /// Strength and seconds.
             pub shake: Option<(f32, f32)>,
+            /// A web or a zip line was shot this tick.
+            pub web_shot: bool,
             pub chat: Vec<String>,
             /// The mod's HUD panel lines (text, 0xRRGGBB); none clears it.
             pub panel: Set<Option<Vec<(String, u32)>>>,
@@ -1439,6 +1493,10 @@ pub mod horizon_mod_sdk {
         }
         pub fn clear_pose() {
             output(|o| o.pose = Set::To(None));
+        }
+        /// A web or a zip line was shot this tick: the game plays its sound.
+        pub fn web_shot() {
+            output(|o| o.web_shot = true);
         }
         pub fn set_wind(volume: f32) {
             output(|o| o.wind = Set::To(volume));
@@ -2242,8 +2300,9 @@ pub mod spiderman {
             pub safe: bool,
             /// A vault over an obstacle on the ground, under way.
             vault: Option<Vault>,
-            /// Webs shot so far, for `/swingmode debug`.
+            /// Webs shot so far, for `/swingmode debug`, and zips begun.
             pub webs: u32,
+            pub zips: u32,
             /// The last vault picked, for `/swingmode debug`.
             pub vault_note: String,
             /// Ticks a held pose has been easing out on the ground.
@@ -2303,6 +2362,7 @@ pub mod spiderman {
                     safe: false,
                     vault: None,
                     webs: 0,
+                    zips: 0,
                     vault_note: String::new(),
                     ease_out: 0,
                 }
@@ -3042,6 +3102,7 @@ pub mod spiderman {
                         let hit = P::of(hit);
                         let flight = flight_ticks(((hit - chest).len() / HOOK_SPEED).clamp(1.0, MAX_FLIGHT), self.web_delay);
                         self.zip = Some(hit);
+                        self.zips += 1;
                         self.zip_flying = flight;
                         self.zip_flight = flight;
                         self.web = None;
@@ -3810,6 +3871,13 @@ pub mod spiderman {
         last_chest: Option<P>,
         now: u64,
         last_panel: Vec<String>,
+        /// The player has shot a web or zipped at least once (kept with the
+        /// settings): the hint is not shown again. And the ticks it has been up
+        /// since the game started.
+        hint_done: bool,
+        hint_ticks: u32,
+        /// Webs and zips shot as of last tick: one more is a shot to be heard.
+        shots: u32,
         /// A fixed camera for checking poses (`/swingmode view`), and the chase
         /// camera's distance now.
         view: Option<motion::Camera>,
@@ -3844,6 +3912,8 @@ pub mod spiderman {
     const SETTINGS: &str = "settings";
     const DELAY_STEPS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
     const BUTTON_DELAY: u32 = 1;
+    /// How long the hint stays up in one session: a minute of play.
+    const HINT_TICKS: u32 = 1200;
 
     thread_local! {
         /// What is held this tick, by the names above: the mod's keys from
@@ -3926,6 +3996,7 @@ pub mod spiderman {
                             self.spidey.web_delay = d.clamp(0.0, 2.0);
                         }
                     }
+                    Some(("hint", v)) => self.hint_done = v.trim() == "done",
                     _ => {}
                 }
             }
@@ -3933,8 +4004,9 @@ pub mod spiderman {
 
         fn save_settings(&self) {
             let text = format!(
-                "delay={}\n",
-                self.spidey.web_delay
+                "delay={}\nhint={}\n",
+                self.spidey.web_delay,
+                if self.hint_done { "done" } else { "show" }
             );
             if let Err(e) = storage::set(SETTINGS, text.as_bytes()) {
                 crate::game::spider_man::horizon_mod_sdk::log::write(crate::game::spider_man::horizon_mod_sdk::log::Level::Warn, &e);
@@ -3960,10 +4032,19 @@ pub mod spiderman {
             ]);
         }
 
-        fn panel(&mut self) {
-            let lines: Vec<String> = match self.mode {
-                Mode::Off => Vec::new(),
-                Mode::Web => vec!["Web: hold R, A/D side. Hold Z: zip, Space hauls".into()],
+        /// The hint for a first web; the game writes the keys the web and the
+        /// zip are on now in place of `{web}` and `{zip}` (the mod's key names).
+        /// Up while the mod can act (`active`) until the first web or zip,
+        /// then never again. It steps aside after `HINT_TICKS` of a session (no
+        /// anchor in reach, or a player who isn't interested) and comes back with
+        /// the next start of the game.
+        fn panel(&mut self, active: bool) {
+            let show = active && self.mode == Mode::Web && !self.hint_done && self.hint_ticks < HINT_TICKS;
+            let lines: Vec<String> = if show {
+                self.hint_ticks += 1;
+                vec!["Hold {web} and jump to swing, or hold {zip} to zip".into()]
+            } else {
+                Vec::new()
             };
             if lines != self.last_panel {
                 if lines.is_empty() {
@@ -3993,6 +4074,9 @@ pub mod spiderman {
                     last_chest: None,
                     now: 100,
                     last_panel: Vec::new(),
+                    hint_done: false,
+                    hint_ticks: 0,
+                    shots: 0,
                     spidey: spidey::Spidey::default(),
                     rays: sense::Rays::default(),
                     sense: None,
@@ -4018,8 +4102,8 @@ pub mod spiderman {
         fn tick(&mut self, _tick: u64) {
             self.now += 1;
             read_keys();
-            self.panel();
             let (Some(st), Some(player)) = (motion::get(), game::get_player()) else {
+                self.panel(false);
                 self.last_chest = None;
                 self.sense = None;
                 return;
@@ -4066,6 +4150,15 @@ pub mod spiderman {
                 if let Some(v) = self.spidey.tick(&state, chest, v) {
                     motion::set_velocity(v.wit());
                 }
+                let shots = self.spidey.webs + self.spidey.zips;
+                if shots != std::mem::replace(&mut self.shots, shots) {
+                    motion::web_shot();
+                    if !self.hint_done {
+                        self.hint_done = true;
+                        self.save_settings();
+                    }
+                }
+                self.panel(true);
                 if self.spidey.safe {
                     motion::reset_fall();
                 }
@@ -4080,6 +4173,7 @@ pub mod spiderman {
                 return;
             }
             // Off: the game moves the player as always.
+            self.panel(false);
             self.last_chest = None;
             motion::set_ropes(&[]);
         }
