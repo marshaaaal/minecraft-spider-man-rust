@@ -28,7 +28,7 @@ How an agent works on this mod. The README says what it is and how to build it.
   sits at the revision `native/compatibility.json` names. `HORIZON_TARGET=<dir>` reuses a warm Cargo target (a
   Horizon build is several GB).
 - A new version, or a move to a newer Horizon Nightly: `native/README.md` § Release a version and § Move to a newer
-  Horizon. A release is a GitHub release with the `.hnmod`; the registry reads it from there.
+  Horizon. A release is a GitHub release with the `.hnmod`, then the registry form adds the version (entries are pinned by SHA-256).
 - `native/` clippy covers only its own crates (`-p horizon-dev-reload --features host -p horizon-mod-sdk`).
 - The WebAssembly build (0.1.0, Horizon's unmerged `motion` branch) is history: README § WebAssembly build.
 
