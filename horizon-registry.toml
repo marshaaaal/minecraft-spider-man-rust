@@ -21,6 +21,8 @@ What it changes in the game: the player's velocity and fall while swinging (own 
 and player pose, web lines drawn in the world, and the view's turn while running on a wall. It reads no files outside
 its settings and sends nothing over the network.
 
+Any feedback keeps this project alive! Ideas and bugs: https://github.com/wyddy7/minecraft-spider-man-rust/issues
+
 Fan-made, not affiliated with Marvel, Sony or Insomniac Games."""
 authors = ["wyddy7"]
 license = "MIT"
